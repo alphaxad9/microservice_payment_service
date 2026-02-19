@@ -41,7 +41,7 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest --cov=src --cov-report=xml -v --tb=short --ds=my_backend.settings
+          pytest --cov=src --cov-report=xml -v --tb=short --ds=payment_service.settings
 
 
   build-and-push:
