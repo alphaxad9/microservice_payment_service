@@ -1,0 +1,102 @@
+name: Build and Push payment Service Image
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: payment-service-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_NAME: payment-service
+  REGISTRY: ghcr.io
+
+jobs:
+
+  test:
+    runs-on: ubuntu-latest
+    
+    env:
+      DJANGO_SECRET_KEY: django-insecure-test-key-for-ci-only-not-for-prod
+      DJANGO_DEBUG: 'True'
+      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1
+      
+      POSTGRES_ENGINE: django.db.backends.sqlite3
+      POSTGRES_DB: ':memory:'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install deps
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pytest-django
+
+      - name: Run tests
+        run: |
+          pytest --cov=src --cov-report=xml -v --tb=short --ds=my_backend.settings
+
+
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+      actions: read   # ⭐ ADD THIS (helps telemetry + SARIF)
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/payment-service
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build and Push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          load: true
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ghcr.io/${{ github.repository_owner }}/payment-service:sha-${{ github.sha }}
+          format: sarif
+          output: trivy.sarif
+          severity: CRITICAL,HIGH
+          github-pat: ${{ secrets.GITHUB_TOKEN }}
+
+      # ⭐ ONLY UPLOAD ON PUSH
+      - name: Upload SARIF
+        if: github.event_name == 'push'
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy.sarif

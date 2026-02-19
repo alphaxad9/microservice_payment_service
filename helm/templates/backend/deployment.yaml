@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "helm.appname" (dict "ctx" $ "svc" "payment") }}
+  labels:
+    app: {{ include "helm.appname" (dict "ctx" $ "svc" "payment") }}
+    app.kubernetes.io/component: payment-service
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | default "1.0.0" | quote }}
+    app.kubernetes.io/part-of: {{ .Chart.Name }}
+spec:
+  replicas: {{ .Values.replicaCount | default 1 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: {{ include "helm.appname" (dict "ctx" $ "svc" "payment") }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "helm.appname" (dict "ctx" $ "svc" "payment") }}
+        app.kubernetes.io/component: payment-service
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "helm.appname" (dict "ctx" $ "svc" "payment") }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: payment
+          image: "{{ .Values.backend.payment.image.repository }}:{{ .Values.backend.payment.image.tag }}"
+          imagePullPolicy: {{ .Values.backend.payment.image.pullPolicy | default "IfNotPresent" }}
+          
+          ports:
+            - name: http
+              containerPort: {{ .Values.backend.payment.port }}
+              protocol: TCP
+          
+          command: ["uvicorn", "payment_service.asgi:application", "--host", "0.0.0.0", "--port", "{{ .Values.backend.payment.port }}"]
+          
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          
+          livenessProbe:
+            httpGet:
+              path: /health/
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health/
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          startupProbe:
+            httpGet:
+              path: /health/
+              port: http
+            failureThreshold: 30
+            periodSeconds: 10
+          
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          
+          # ✅ Mount ALL secrets (no duplication, single source of truth)
+          envFrom:
+            - configMapRef:
+                name: {{ include "helm.appname" (dict "ctx" $ "svc" "payment") }}
+            - secretRef:
+                name: {{ .Values.secrets.payment }}
+            - secretRef:
+                name: {{ .Values.secrets.postgres }}
+            - secretRef:
+                name: {{ .Values.secrets.rabbitmq }}
+            - secretRef:
+                name: {{ .Values.secrets.kafka }}
+      
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

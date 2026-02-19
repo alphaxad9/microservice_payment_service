@@ -1,0 +1,83 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "helm.appname" (dict "ctx" $ "svc" "payment") }}
+  labels:
+    app: {{ include "helm.appname" (dict "ctx" $ "svc" "payment") }}
+    app.kubernetes.io/component: payment-service
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | default "1.0.0" | quote }}
+    app.kubernetes.io/part-of: {{ .Chart.Name }}
+
+data:
+  # =========================
+  # Django Core Settings
+  # =========================
+  DJANGO_SETTINGS_MODULE: {{ .Values.config.payment.djangoSettingsModule | quote }}
+  DJANGO_DEBUG: {{ .Values.config.payment.djangoDebug | quote }}
+  DJANGO_ALLOWED_HOSTS: {{ .Values.config.payment.djangoAllowedHosts | quote }}
+  DJANGO_LANGUAGE_CODE: {{ .Values.config.payment.djangoLanguageCode | quote }}
+  DJANGO_TIME_ZONE: {{ .Values.config.payment.djangoTimeZone | quote }}
+  DEFAULT_FROM_EMAIL: {{ .Values.config.payment.defaultFromEmail | quote }}
+  LOG_LEVEL: {{ .Values.config.payment.logLevel | quote }}
+  
+  # =========================
+  # Server Settings
+  # =========================
+  PORT: {{ .Values.backend.payment.port | quote }}
+  
+  # =========================
+  # Database (Non-sensitive Connection Info)
+  # =========================
+  POSTGRES_ENGINE: {{ .Values.config.payment.postgresEngine | quote }}
+  POSTGRES_HOST: {{ .Values.config.payment.postgresHost | quote }}
+  POSTGRES_PORT: {{ .Values.config.payment.postgresPort | quote }}
+  POSTGRES_DB: {{ .Values.config.payment.postgresDb | quote }}
+  
+  # =========================
+  # Authentication & Security (URLs only)
+  # =========================
+  AUTH_SERVICE_URL: {{ .Values.config.payment.authServiceUrl | quote }}
+  AUTH_PUBLIC_KEY_URL: {{ .Values.config.payment.authPublicKeyUrl | quote }}
+  
+  # =========================
+  # RabbitMQ (Non-sensitive Connection Info)
+  # =========================
+  RABBITMQ_HOST: {{ .Values.config.payment.rabbitmqHost | quote }}
+  RABBITMQ_PORT: {{ .Values.config.payment.rabbitmqPort | quote }}
+  RABBITMQ_QUEUE: {{ .Values.config.payment.rabbitmqQueue | quote }}
+  RABBITMQ_VHOST: {{ .Values.config.payment.rabbitmqVhost | quote }}
+  
+  # =========================
+  # Kafka
+  # =========================
+  KAFKA_BROKERS: {{ .Values.config.payment.kafkaBrokers | quote }}
+  KAFKA_TOPIC: {{ .Values.config.payment.kafkaTopic | quote }}
+  KAFKA_GROUP_ID: {{ .Values.config.payment.kafkaGroupId | quote }}
+  KAFKA_SECURITY_PROTOCOL: {{ .Values.config.payment.kafkaSecurityProtocol | quote }}
+  KAFKA_ENABLE_AUTO_COMMIT: {{ .Values.config.payment.kafkaEnableAutoCommit | quote }}
+  KAFKA_AUTO_OFFSET_RESET: {{ .Values.config.payment.kafkaAutoOffsetReset | quote }}
+  
+  # =========================
+  # Redis
+  # =========================
+  REDIS_HOST: {{ .Values.config.payment.redisHost | quote }}
+  REDIS_PORT: {{ .Values.config.payment.redisPort | quote }}
+  REDIS_DB: {{ .Values.config.payment.redisDb | quote }}
+  REDIS_SOCKET_TIMEOUT: {{ .Values.config.payment.redisSocketTimeout | quote }}
+  REDIS_CONNECT_TIMEOUT: {{ .Values.config.payment.redisConnectTimeout | quote }}
+  REDIS_RETRY_ON_TIMEOUT: {{ .Values.config.payment.redisRetryOnTimeout | quote }}
+  
+  # =========================
+  # Cache TTLs
+  # =========================
+  LIKES_CACHE_TTL: {{ .Values.config.payment.likesCacheTtl | quote }}
+  AUTHOR_TIMELINE_CACHE_TTL: {{ .Values.config.payment.authorTimelineCacheTtl | quote }}
+  
+  # =========================
+  # Channel Layers
+  # =========================
+  CHANNEL_LAYER_HOSTS: {{ .Values.config.payment.channelLayerHosts | quote }}
+  CHANNEL_LAYER_CAPACITY: {{ .Values.config.payment.channelLayerCapacity | quote }}
+  CHANNEL_LAYER_EXPIRY: {{ .Values.config.payment.channelLayerExpiry | quote }}
