@@ -93,3 +93,4 @@ webencodings==0.5.1
 wrapt==1.17.3
 zipp==3.23.0
 zope.interface==8.0.1
+httptools>=0.5.0

@@ -1,0 +1,58 @@
+# 1. First, build the NEW image with your updated Dockerfile
+docker build -t alphaxad9/payment-service:0.0.3 .
+
+# 2. Also tag as latest
+docker tag alphaxad9/payment-service:0.0.3 alphaxad9/payment-service:latest
+
+# 3. Push both to Docker Hub
+docker push alphaxad9/payment-service:0.0.3
+docker push alphaxad9/payment-service:latest
+
+# 4. Verify the images have different digests
+docker images alphaxad9/payment-service --digests
+
+
+
+
+
+
+
+# Update the deployment to use the new image
+kubectl set image deployment/payment-service -n payment-service payment-service=alphaxad9/payment-service:0.0.3
+
+# Check the rollout status
+kubectl rollout status deployment/payment-service -n payment-service
+
+# Watch the new pod
+kubectl get pods -n payment-service -w
+
+
+
+
+
+
+
+
+
+
+# Commit and push the changes to Git
+git add services/payment-service/base/kustomization.yaml
+git commit -m "Update payment-service image to 0.0.3 with fixed Dockerfile"
+git push
+
+# Then in ArgoCD, sync the application
+# Either via UI or CLI:
+argocd app sync payment-service
+
+
+
+
+
+
+# Check if the new image is being used
+kubectl get deployment payment-service -n payment-service -o jsonpath='{.spec.template.spec.containers[0].image}'
+
+# Should show: alphaxad9/payment-service:0.0.3
+
+# Watch the new pod roll out
+kubectl get pods -n payment-service -w
