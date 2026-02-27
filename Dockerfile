@@ -18,7 +18,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --user --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # =========================
 # Stage 2 — Runtime
@@ -30,9 +30,9 @@ RUN groupadd -r django && useradd -r -g django django
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PATH="/home/django/.local/bin:$PATH" \
     DJANGO_SETTINGS_MODULE=payment_service.settings \
-    UVICORN_WORKERS=4
+    UVICORN_WORKERS=4 \
+    PATH="/usr/local/bin:$PATH"
 
 WORKDIR /app
 
@@ -43,19 +43,24 @@ RUN apt-get update \
     curl \
  && rm -rf /var/lib/apt/lists/*
 
-# Copy installed packages
-COPY --from=builder /root/.local /home/django/.local
+# Copy installed packages from builder to system site-packages
+COPY --from=builder /usr/local/lib/python3.10/site-packages/ /usr/local/lib/python3.10/site-packages/
+COPY --from=builder /usr/local/bin/ /usr/local/bin/
 
-# Copy project
+# Copy project with proper ownership
 COPY --chown=django:django . .
 
+# Create necessary directories and set permissions
 RUN mkdir -p /app/staticfiles /app/media \
  && chown -R django:django /app
 
+# Switch to non-root user
 USER django
 
+# Collect static files
 RUN python manage.py collectstatic --noinput
 
+# Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8000/health/ || exit 1
 
