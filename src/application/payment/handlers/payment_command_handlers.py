@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 from collections.abc import Awaitable
 import logging  # ← ADDED FOR LOGGING
 from django.db import connection
+from datetime import datetime  # ← ADDED IMPORT
 
 
 from src.application.payment.services.interfaces.payment_command_service_interface import PaymentCommandServiceInterface
@@ -38,105 +39,131 @@ class IdempotentPaymentExecutor:
  # src/application/payment/handlers/payment_command_handlers.py
 # (relevant part only — replace the execute_payment_creation method)
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     async def execute_payment_creation(
-        self,
-        *,
-        idempotency_key: str,
-        user_id: UUID,
-        payload: Dict[str, Any],
-        execute_command: Callable[[], Awaitable[UUID]],
-        fetch_view: Callable[[UUID], Awaitable[PaymentView]],
-    ) -> PaymentView:
-        logger.info("[🔥🔥] Starting execute_payment_creation with idempotency_key %s", idempotency_key)
-        locker_id = str(uuid4())
-        logger.info("[🌟] Locker ID generated: %s", locker_id)
-        
-        # Compute fingerprint once — used both for creation and validation
-        fingerprint = compute_fingerprint(payload)
-        logger.info("[⭐] Fingerprint computed: %s", fingerprint)
-        
-        try:
-            logger.info("[🚀] Attempting to begin request processing")
-            # This call will:
-            # - Create the key if it doesn't exist (with correct fingerprint)
-            # - Validate fingerprint if exists
-            # - Acquire lock or return cached response
-            stored: Optional[Dict[str, Any]] = await self._idempotency.begin_request_processing(
-                key=idempotency_key,
-                user_id=user_id,
-                locker_id=locker_id,
-                fingerprint=fingerprint,
-            )
-            logger.info("[🌈] Request processing begun, stored: %s", stored)
-        except IdempotencyKeyReuseWithDifferentPayloadError as e:
-            logger.warning("[💥] Idempotency conflict: %s", str(e))
-            raise PaymentDomainError(
-                "Idempotency conflict: request parameters do not match previous use of this key"
-            ) from e
-        except IdempotencyKeyInProgressError:
-            logger.info("[🎉] Idempotency key in progress")
-            raise PaymentDomainError(
-                "This request is already being processed. Please retry in a few seconds."
-            ) from None
-        except Exception as exc:
-            logger.exception("[🔍] Unexpected idempotency error for key %s", idempotency_key)
-            raise PaymentDomainError("Idempotency processing failed") from exc
-
-        # ── Replay case ────────────────────────────────────────────────
-        if stored is not None:
-            logger.info("[📊] Stored response found, entering replay case")
-            body: Dict[str, Any] = stored.get("body", {})
-            if "error" in body:
-                logger.info("[✅] Replaying stored error")
-                raise PaymentDomainError(body["error"])
-            if "payment_id" not in body:
-                logger.info("[❌] Invalid cached response: missing payment_id")
-                raise PaymentDomainError("Invalid cached response: missing payment_id")
+            self,
+            *,
+            idempotency_key: str,
+            user_id: UUID,
+            payload: Dict[str, Any],
+            execute_command: Callable[[], Awaitable[UUID]],
+            fetch_view: Callable[[UUID], Awaitable[PaymentView]],
+        ) -> PaymentView:
+            logger.info("[🔥🔥] Starting execute_payment_creation with idempotency_key %s", idempotency_key)
+            locker_id = str(uuid4())
+            logger.info("[🌟] Locker ID generated: %s", locker_id)
             
-            payment_id = UUID(body["payment_id"])
-            logger.info("[🛡️] Payment ID from stored: %s", payment_id)
-            return await fetch_view(payment_id)
-
-        # ── First-time execution ───────────────────────────────────────
-        try:
-            logger.info("[💰] Entering first-time execution")
-            payment_id: UUID = await execute_command()
-            logger.info("[📦] Command executed, payment_id: %s", payment_id)
-            result_view: PaymentView = await fetch_view(payment_id)
-            logger.info("[🛠️] Payment view fetched")
-
-            # Record success → unlock + enable future replay
-            logger.info("[⚙️] Recording idempotency success for key %s", idempotency_key)
-            await self._idempotency.record_successful_response(
-                key=idempotency_key,
-                user_id=user_id,
-                body={
-                    "payment_id": str(result_view.payment_id),
-                    "status": result_view.status,
-                    "amount": str(result_view.amount),
-                    "currency": result_view.currency,
-                },
-            )
-            logger.info("[🏆] Success recorded")
-            return result_view
-
-        except Exception as exc:
-            # Best effort — record failure so future requests can replay the error
-            logger.info("[🚫] Recording idempotency failure for key %s: %s", 
-                        idempotency_key, str(exc))
+            fingerprint = compute_fingerprint(payload)
+            logger.info("[⭐] Fingerprint computed: %s", fingerprint)
+            
             try:
-                await self._idempotency.record_failed_response(
+                logger.info("[🚀] Attempting to begin request processing")
+                stored: Optional[Dict[str, Any]] = await self._idempotency.begin_request_processing(
                     key=idempotency_key,
                     user_id=user_id,
-                    body={"error": str(exc)},
+                    locker_id=locker_id,
+                    fingerprint=fingerprint,
                 )
-                logger.info("[🔑] Failure recorded")
-            except Exception:
-                logger.info("[🕵️] Failed to record failure, ignoring to not mask original error")
-                pass  # don't mask original error
-            
-            raise
+                logger.info("[🌈] Request processing begun, stored: %s", stored)
+            except IdempotencyKeyReuseWithDifferentPayloadError as e:
+                logger.warning("[💥] Idempotency conflict: %s", str(e))
+                raise PaymentDomainError(
+                    "Idempotency conflict: request parameters do not match previous use of this key"
+                ) from e
+            except IdempotencyKeyInProgressError:
+                logger.info("[🎉] Idempotency key in progress")
+                raise PaymentDomainError(
+                    "This request is already being processed. Please retry in a few seconds."
+                ) from None
+            except Exception as exc:
+                logger.exception("[🔍] Unexpected idempotency error for key %s", idempotency_key)
+                raise PaymentDomainError("Idempotency processing failed") from exc
 
+            # ── Replay case ────────────────────────────────────────────────
+            if stored is not None:
+                logger.info("[📊] Stored response found, entering replay case")
+                body: Dict[str, Any] = stored.get("body", {})
+                if "error" in body:
+                    logger.info("[✅] Replaying stored error")
+                    raise PaymentDomainError(body["error"])
+                if "payment_id" not in body:
+                    logger.info("[❌] Invalid cached response: missing payment_id")
+                    raise PaymentDomainError("Invalid cached response: missing payment_id")
+                
+                payment_id = UUID(body["payment_id"])
+                logger.info("[🛡️] Payment ID from stored: %s", payment_id)
+                return await fetch_view(payment_id)
+
+            # ── First-time execution ───────────────────────────────────────
+            try:
+                logger.info("[💰] Entering first-time execution")
+                payment_id: UUID = await execute_command()
+                logger.info("[📦] Command executed, payment_id: %s", payment_id)
+                
+                # ✅ Build complete PaymentView with ALL required fields
+                now = datetime.now()  # or use timezone.now() if using Django timezone support
+                result_view = PaymentView(
+                    payment_id=payment_id,
+                    wallet_id=UUID(payload["wallet_id"]),          # ← Extract from payload
+                    user_id=UUID(payload["user_id"]),              # ← Extract from payload
+                    amount=payload["amount"],                      # Already stringified
+                    currency=payload["currency"],
+                    payment_type=payload.get("type", "deposit"),   # ← e.g., "deposit", "withdrawal"
+                    payment_method=payload["payment_method"],      # ← Extract from payload
+                    status="PENDING",
+                    reference_id=UUID(payload["reference_id"]) if payload.get("reference_id") else None,
+                    description=payload.get("description") or "",
+                    created_at=now,
+                    updated_at=now,
+                )
+                logger.info("[🛠️] Payment view constructed with all required fields")
+
+                # Record success → unlock + enable future replay
+                logger.info("[⚙️] Recording idempotency success for key %s", idempotency_key)
+                await self._idempotency.record_successful_response(
+                    key=idempotency_key,
+                    user_id=user_id,
+                    body={
+                        "payment_id": str(result_view.payment_id),
+                        "status": result_view.status,
+                        "amount": str(result_view.amount),
+                        "currency": result_view.currency,
+                    },
+                )
+                logger.info("[🏆] Success recorded")
+                return result_view
+
+            except Exception as exc:
+                logger.info("[🚫] Recording idempotency failure for key %s: %s", 
+                            idempotency_key, str(exc))
+                try:
+                    await self._idempotency.record_failed_response(
+                        key=idempotency_key,
+                        user_id=user_id,
+                        body={"error": str(exc)},
+                    )
+                    logger.info("[🔑] Failure recorded")
+                except Exception:
+                    logger.info("[🕵️] Failed to record failure, ignoring to not mask original error")
+                    pass
+                raise
 
 
 

@@ -14,6 +14,7 @@ docker images alphaxad9/payment-service --digests
 
 
 
+kubectl logs -f deployment/payment-service -n payment-service
 
 
 

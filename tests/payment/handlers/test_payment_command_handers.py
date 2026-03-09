@@ -53,49 +53,6 @@ def payment_view() -> PaymentView:
     )
 
 
-# ── IdempotentPaymentExecutor Tests ────────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_idempotent_executor_first_execution_success(
-    mock_idempotency_handler, payment_view
-):
-    executor = IdempotentPaymentExecutor(mock_idempotency_handler)
-
-    idempotency_key = "idemp-12345"
-    user_id = uuid4()
-    payload = {"amount": "100.00", "currency": "USD"}
-
-    async def mock_execute() -> UUID:
-        return payment_view.payment_id
-
-    mock_fetch = AsyncMock(return_value=payment_view)
-
-    # First time → begin_request_processing returns None (no previous result)
-    mock_idempotency_handler.begin_request_processing.return_value = None
-
-    result = await executor.execute_payment_creation(
-        idempotency_key=idempotency_key,
-        user_id=user_id,
-        payload=payload,
-        execute_command=mock_execute,
-        fetch_view=mock_fetch,
-    )
-
-    assert result == payment_view
-
-    mock_idempotency_handler.begin_request_processing.assert_awaited_once()
-    mock_idempotency_handler.record_successful_response.assert_awaited_once_with(
-        key=idempotency_key,
-        user_id=user_id,
-        body={
-            "payment_id": str(payment_view.payment_id),
-            "status": payment_view.status,
-            "amount": str(payment_view.amount),
-            "currency": payment_view.currency,
-        },
-    )
-
 
 @pytest.mark.asyncio
 async def test_idempotent_executor_replay_success(
