@@ -18,7 +18,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --retries 10 --timeout 100 --no-cache-dir -r requirements.txt
 
 # =========================
 # Stage 2 — Runtime
@@ -47,18 +47,21 @@ RUN apt-get update \
 COPY --from=builder /usr/local/lib/python3.10/site-packages/ /usr/local/lib/python3.10/site-packages/
 COPY --from=builder /usr/local/bin/ /usr/local/bin/
 
+# Copy entrypoint script first (for better caching)
+COPY --chown=django:django entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 # Copy project with proper ownership
 COPY --chown=django:django . .
 
-# Create necessary directories and set permissions
-RUN mkdir -p /app/staticfiles /app/media \
- && chown -R django:django /app
+# Create necessary directories with correct permissions
+# IMPORTANT: Create directories to match Kubernetes mounts
+RUN mkdir -p /app/static /app/media \
+ && chown -R django:django /app \
+ && chmod -R 755 /app/static /app/media
 
 # Switch to non-root user
 USER django
-
-# Collect static files
-RUN python manage.py collectstatic --noinput
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
@@ -66,10 +69,8 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
 
 EXPOSE 8000
 
-# Production-ready uvicorn with multiple workers
-CMD uvicorn payment_service.asgi:application \
-    --host 0.0.0.0 \
-    --port 8000 \
-    --workers ${UVICORN_WORKERS} \
-    --loop asyncio \
-    --http httptools
+# Use entrypoint script (runs migrations + collectstatic at runtime)
+ENTRYPOINT ["/entrypoint.sh"]
+
+# Production-ready uvicorn with multiple workers (JSON format for better signal handling)
+CMD ["uvicorn", "payment_service.asgi:application", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--loop", "asyncio", "--http", "httptools"]
